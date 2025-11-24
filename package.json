@@ -1,21 +1,9 @@
 {
   "name": "shiporsink-ai-api",
   "version": "1.0.0",
+  "type": "module",
   "description": "AI coaching API for Ship or Sink Change Management app",
-  "main": "api/chat.js",
-  "scripts": {
-    "dev": "vercel dev"
-  },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0"
-  },
-  "keywords": [
-    "change-management",
-    "ai",
-    "coaching",
-    "prosci",
-    "adkar"
-  ],
-  "author": "Brandon Mann",
-  "license": "MIT"
+  }
 }
