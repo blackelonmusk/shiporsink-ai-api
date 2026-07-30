@@ -1,6 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 const client = new Anthropic();
 
+const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-5";
+
 const SYSTEM_PROMPT = `You are an expert change management coach with deep knowledge of Prosci's ADKAR model and organizational change best practices. You're helping a change manager navigate their project.
 
 You have access to CROSS-PROJECT DATA - you can see patterns across all of the user's projects, including which stakeholders have been resistant or champions in previous projects, and how groups have performed historically.
@@ -157,16 +159,9 @@ ${insights.patterns.champions.map((p) => `- ${p}`).join("\n")}`;
     }
 
     const message = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: MODEL,
       max_tokens: 1024,
       system: SYSTEM_PROMPT,
-      messages: [
-        {
-          role: "user",
-          content: question + contextMessage,
-        },
-      ],
-    });
 
     const response = message.content[0].text;
 
