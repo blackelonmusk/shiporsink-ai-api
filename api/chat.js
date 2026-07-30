@@ -162,10 +162,17 @@ ${insights.patterns.champions.map((p) => `- ${p}`).join("\n")}`;
       model: MODEL,
       max_tokens: 1024,
       system: SYSTEM_PROMPT,
+      messages: [
+        {
+          role: "user",
+          content: question + contextMessage,
+        },
+      ],
+    });
 
     const response = message.content[0].text;
-
     return res.status(200).json({ response });
+
   } catch (error) {
     console.error("Claude API error:", error);
     return res.status(500).json({ error: "Failed to get AI response" });
