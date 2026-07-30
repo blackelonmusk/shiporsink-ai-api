@@ -43,6 +43,25 @@ Common objections and responses:
 
 Always end with a specific next action the change manager can take.`;
 
+/**
+ * Extract text from a Messages API response.
+ *
+ * Never index into content directly. The array can contain thinking,
+ * tool_use, or other block types, and their order is not guaranteed.
+ * The previous version used content[0].text, which returned undefined
+ * whenever the first block was not text -- producing a 200 with an
+ * empty {} body and no error anywhere.
+ */
+function extractText(message) {
+  if (!Array.isArray(message?.content)) return "";
+
+  return message.content
+    .filter((block) => block.type === "text" && typeof block.text === "string")
+    .map((block) => block.text)
+    .join("\n")
+    .trim();
+}
+
 export default async function handler(req, res) {
   // Handle CORS for cross-origin requests
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -57,10 +76,24 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
+  // Read the body defensively. Malformed JSON previously threw here and
+  // surfaced as a 500 instead of a 400.
+  let body;
   try {
-    const { question, projectContext } = req.body;
+    body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
+  } catch (parseError) {
+    console.error("POST /api/chat - invalid JSON body:", parseError.message);
+    return res.status(400).json({ error: "Request body must be valid JSON" });
+  }
 
-    if (!question) {
+  if (!body || typeof body !== "object") {
+    return res.status(400).json({ error: "Request body is required" });
+  }
+
+  try {
+    const { question, projectContext } = body;
+
+    if (!question || typeof question !== "string" || !question.trim()) {
       return res.status(400).json({ error: "Question is required" });
     }
 
@@ -97,10 +130,10 @@ ${projectContext.milestones
       // ADD CROSS-PROJECT INSIGHTS
       if (projectContext.crossProjectInsights) {
         const insights = projectContext.crossProjectInsights;
-        
+
         contextMessage += `\n\n=== CROSS-PROJECT INTELLIGENCE ===`;
         contextMessage += `\nTotal Projects: ${insights.totalProjects || 0} (${insights.activeProjects || 0} active)`;
-        
+
         // Other projects
         if (insights.otherProjects?.length > 0) {
           contextMessage += `\n\nOther Projects:
@@ -112,7 +145,7 @@ ${insights.otherProjects.map((p) => `- ${p.name} (${p.status})`).join("\n")}`;
           const stakeholdersWithHistory = insights.globalStakeholders.filter(
             (s) => s.projectHistory && s.projectHistory.length > 0
           );
-          
+
           if (stakeholdersWithHistory.length > 0) {
             contextMessage += `\n\nStakeholder Cross-Project History:`;
             stakeholdersWithHistory.forEach((s) => {
@@ -129,7 +162,7 @@ ${insights.otherProjects.map((p) => `- ${p.name} (${p.status})`).join("\n")}`;
           const groupsWithHistory = insights.groups.filter(
             (g) => g.projectHistory && g.projectHistory.length > 0
           );
-          
+
           if (groupsWithHistory.length > 0) {
             contextMessage += `\n\nGroup/Department History:`;
             groupsWithHistory.forEach((g) => {
@@ -147,20 +180,20 @@ ${insights.otherProjects.map((p) => `- ${p.name} (${p.status})`).join("\n")}`;
             contextMessage += `\n\n⚠️ RESISTANCE PATTERNS DETECTED:
 ${insights.patterns.resistant.map((p) => `- ${p}`).join("\n")}`;
           }
-          
+
           if (insights.patterns.champions?.length > 0) {
             contextMessage += `\n\n🌟 CHAMPION PATTERNS DETECTED:
 ${insights.patterns.champions.map((p) => `- ${p}`).join("\n")}`;
           }
         }
-        
+
         contextMessage += `\n=== END CROSS-PROJECT INTELLIGENCE ===`;
       }
     }
 
     const message = await client.messages.create({
       model: MODEL,
-      max_tokens: 1024,
+      max_tokens: 2048,
       system: SYSTEM_PROMPT,
       messages: [
         {
@@ -170,11 +203,25 @@ ${insights.patterns.champions.map((p) => `- ${p}`).join("\n")}`;
       ],
     });
 
-    const response = message.content[0].text;
-    return res.status(200).json({ response });
+    const response = extractText(message);
 
+    // If there is genuinely no text, say so loudly instead of returning
+    // an empty 200 that the caller cannot distinguish from success.
+    if (!response) {
+      console.error(
+        "POST /api/chat - no text block in response.",
+        "model:", MODEL,
+        "stop_reason:", message?.stop_reason,
+        "block types:", Array.isArray(message?.content)
+          ? message.content.map((b) => b.type).join(",")
+          : "none"
+      );
+      return res.status(502).json({ error: "Model returned no text content" });
+    }
+
+    return res.status(200).json({ response });
   } catch (error) {
-    console.error("Claude API error:", error);
+    console.error("POST /api/chat - Claude API error:", error);
     return res.status(500).json({ error: "Failed to get AI response" });
   }
 }
